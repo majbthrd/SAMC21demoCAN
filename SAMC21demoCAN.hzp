@@ -1,0 +1,84 @@
+<!DOCTYPE CrossStudio_Project_File>
+<solution Name="SAMC21demoCAN" target="8" version="2">
+  <project Name="SAMC21demoCAN">
+    <configuration
+      Name="Common"
+      Placement="Flash"
+      Target="ATSAMC21J18A"
+      arm_architecture="v6M"
+      arm_core_type="Cortex-M0+"
+      arm_endian="Little"
+      arm_fpu_type="None"
+      arm_interwork="No"
+      arm_linker_heap_size="256"
+      arm_linker_process_stack_size="0"
+      arm_linker_stack_size="256"
+      arm_simulator_memory_simulation_filename="$(TargetsDir)/SAM_C/Simulator/SAM_C_SimulatorMemory_$(HostOS)_$(HostArch)$(HostDLLExt)"
+      arm_simulator_memory_simulation_parameter="SAM C,SAM C21;FLASH,0x00000000,0x00040000,ROM;RAM,0x20000000,0x00008000,RAM"
+      arm_target_debug_interface_type="ADIv5"
+      arm_target_interface_type="SWD"
+      arm_target_loader_applicable_loaders="Flash"
+      arm_target_loader_default_loader="Flash"
+      c_user_include_directories="$(DeviceIncludePath);$(PackagesDir)/CMSIS_4/CMSIS/Include;$(TargetsDir)/SAM_C/CMSIS/Device/Include;$(ProjectDir)"
+      debug_register_definition_file="$(DeviceRegisterDefinitionFile)"
+      gcc_entry_point="Reset_Handler"
+      linker_memory_map_file="$(DeviceMemoryMapFile)"
+      linker_section_placement_file="$(StudioDir)/targets/Cortex_M/flash_placement.xml"
+      macros="DeviceIncludePath=$(TargetsDir)/SAM_C/CMSIS/Device/SAMC21/Include;DeviceHeaderFile=$(TargetsDir)/SAM_C/CMSIS/Device/SAMC21/Include/samc21.h;DeviceLoaderFile=$(TargetsDir)/SAM_C/Loader/SAM_C21_Loader.elf;DeviceMemoryMapFile=$(TargetsDir)/SAM_C/XML/ATSAMC21J18A_MemoryMap.xml;DeviceRegisterDefinitionFile=$(TargetsDir)/SAM_C/XML/ATSAMC21J18A_Registers.xml;DeviceSystemFile=$(TargetsDir)/SAM_C/CMSIS/Device/SAMC21/Source/system_samc21.c;DeviceVectorsFile=$(TargetsDir)/SAM_C/Source/ATSAMC21J18A_Vectors.s;DeviceFamily=SAM C;DeviceSubFamily=SAM C21"
+      package_dependencies="Atmel_ATSAMC21-XPRO"
+      project_directory=""
+      project_type="Executable"
+      property_groups_file_path="$(TargetsDir)/SAM_C/XML/property_groups.xml"
+      target_get_partname_script="GetPartName()"
+      target_match_partname_script="MatchPartName(&quot;$(Target)&quot;)"
+      target_reset_script="Reset();"
+      target_trace_initialize_script="EnableTrace(&quot;$(TraceInterfaceType)&quot;)" />
+    <configuration
+      Name="Flash"
+      arm_target_flash_loader_file_path="$(DeviceLoaderFile)" />
+    <folder Name="CMSIS Files">
+      <file file_name="$(DeviceHeaderFile)" />
+    </folder>
+    <folder Name="Script Files">
+      <file file_name="$(TargetsDir)/SAM_C/Scripts/SAM_C_Target.js">
+        <configuration Name="Common" file_type="Reset Script" />
+      </file>
+    </folder>
+    <folder Name="Source Files">
+      <configuration Name="Common" filter="c;cpp;cxx;cc;h;s;asm;inc" />
+      <file file_name="main.c" />
+      <file file_name="mcan.c" />
+      <file file_name="board_support.c" />
+    </folder>
+    <folder Name="System Files">
+      <file file_name="$(StudioDir)/source/thumb_crt0.s" />
+      <file file_name="$(TargetsDir)/SAM_C/Source/SAM_C_Startup.s" />
+      <file file_name="$(DeviceVectorsFile)">
+        <configuration Name="Common" file_type="Assembly" />
+      </file>
+    </folder>
+  </project>
+  <configuration Name="THUMB Debug" inherited_configurations="THUMB;Debug" />
+  <configuration
+    Name="THUMB"
+    Platform="ARM"
+    arm_instruction_set="Thumb"
+    arm_library_instruction_set="Thumb"
+    c_preprocessor_definitions="__THUMB"
+    hidden="Yes" />
+  <configuration
+    Name="Debug"
+    c_preprocessor_definitions="DEBUG"
+    gcc_debugging_level="Level 3"
+    gcc_optimization_level="None"
+    hidden="Yes" />
+  <configuration
+    Name="THUMB Release"
+    inherited_configurations="THUMB;Release" />
+  <configuration
+    Name="Release"
+    c_preprocessor_definitions="NDEBUG"
+    gcc_debugging_level="Level 3"
+    gcc_optimization_level="Level 1"
+    hidden="Yes" />
+</solution>

@@ -1,3 +1,10 @@
+/*
+This code was originally written for the SAMA5D2, but has been modified to work with the SAMC21.
+
+The peripheral is the same (except for Message RAM addressing), but 
+Atmel's SAMC21 register definition include files have a different and peculiar syntax.
+*/
+
 /* ----------------------------------------------------------------------------
  *         SAM Software Package License
  * ----------------------------------------------------------------------------
@@ -47,6 +54,9 @@
 
 #include <assert.h>
 
+/* MCAN-related #defines missing from the SAMC21 peripheral definitions */
+#include "mcan_helper.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -92,7 +102,7 @@ struct mcan_msg_info
 struct mcan_config
 {
 	uint32_t id;                  /* peripheral ID (ID_xxx) */
-	Mcan *regs;                   /* set of MCAN hardware registers */
+	Can *regs;                   /* set of MCAN hardware registers */
 	uint32_t *msg_ram;            /* base address of the Message RAM to be
 	                               * assigned to this MCAN instance */
 
@@ -167,8 +177,8 @@ struct mcan_set
 
 static inline bool mcan_is_enabled(const struct mcan_set *set)
 {
-	Mcan *mcan = set->cfg.regs;
-	return ((mcan->MCAN_CCCR & MCAN_CCCR_INIT) == MCAN_CCCR_INIT_DISABLED);
+	Can *mcan = set->cfg.regs;
+	return (!(mcan->CCCR.reg & CAN_CCCR_INIT));
 }
 
 static inline bool mcan_is_extended_id(uint32_t msg_id)
@@ -183,35 +193,35 @@ static inline uint32_t mcan_get_id(uint32_t msg_id)
 
 static inline bool mcan_is_tx_complete(const struct mcan_set *set)
 {
-	Mcan *mcan = set->cfg.regs;
-	return mcan->MCAN_IR & MCAN_IR_TC ? true : false;
+	Can *mcan = set->cfg.regs;
+	return mcan->IR.reg & CAN_IR_TC ? true : false;
 }
 
 static inline void mcan_clear_tx_flag(const struct mcan_set *set)
 {
-	Mcan *mcan = set->cfg.regs;
-	mcan->MCAN_IR = MCAN_IR_TC;
+	Can *mcan = set->cfg.regs;
+	mcan->IR.reg = CAN_IR_TC;
 }
 
 static inline bool mcan_rx_array_data(const struct mcan_set *set)
 {
-	Mcan *mcan = set->cfg.regs;
-	return mcan->MCAN_IR & MCAN_IR_DRX ? true : false;
+	Can *mcan = set->cfg.regs;
+	return mcan->IR.reg & CAN_IR_DRX ? true : false;
 }
 
 static inline void mcan_clear_rx_array_flag(const struct mcan_set *set)
 {
-	Mcan *mcan = set->cfg.regs;
-	mcan->MCAN_IR = MCAN_IR_DRX;
+	Can *mcan = set->cfg.regs;
+	mcan->IR.reg = CAN_IR_DRX;
 }
 
 static inline bool mcan_rx_fifo_data(const struct mcan_set *set, uint8_t fifo)
 {
 	assert(fifo == 0 || fifo == 1);
 
-	Mcan *mcan = set->cfg.regs;
+	Can *mcan = set->cfg.regs;
 
-	return mcan->MCAN_IR & (fifo ? MCAN_IR_RF1N : MCAN_IR_RF0N) ? true
+	return mcan->IR.reg & (fifo ? CAN_IR_RF1N : CAN_IR_RF0N) ? true
 	    : false;
 }
 
@@ -220,9 +230,9 @@ static inline void mcan_clear_rx_fifo_flag(const struct mcan_set *set,
 {
 	assert(fifo == 0 || fifo == 1);
 
-	Mcan *mcan = set->cfg.regs;
+	Can *mcan = set->cfg.regs;
 
-	mcan->MCAN_IR = fifo ? MCAN_IR_RF1N : MCAN_IR_RF0N;
+	mcan->IR.reg = fifo ? CAN_IR_RF1N : CAN_IR_RF0N;
 }
 
 /**

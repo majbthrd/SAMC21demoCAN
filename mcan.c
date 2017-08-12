@@ -1,3 +1,10 @@
+/*
+This code was originally written for the SAMA5D2, but has been modified to work with the SAMC21.
+
+The peripheral is the same (except for Message RAM addressing), but 
+Atmel's SAMC21 register definition include files have a different and peculiar syntax.
+*/
+
 /* ----------------------------------------------------------------------------
  *         SAM Software Package License
  * ----------------------------------------------------------------------------
@@ -41,8 +48,8 @@
 #include "chip.h"
 #include "compiler.h"
 
-#include "peripherals/mcan.h"
-#include "peripherals/pmc.h"
+#include "mcan.h"
+#include "pmc.h"
 
 #include <assert.h>
 #include <string.h>
@@ -188,7 +195,7 @@ bool mcan_initialize(struct mcan_set *set, const struct mcan_config *cfg)
 	assert(cfg->regs);
 	assert(cfg->msg_ram);
 
-	Mcan *mcan = cfg->regs;
+	Can *mcan = cfg->regs;
 	uint32_t *element = NULL, *elem_end = NULL;
 	uint32_t freq, regVal32;
 	enum mcan_dlc dlc;
@@ -198,39 +205,31 @@ bool mcan_initialize(struct mcan_set *set, const struct mcan_config *cfg)
 		return false;
 	set->cfg = *cfg;
 
-	/* Configure the MSB of the Message RAM Base Address */
-	regVal32 = (uint32_t)cfg->msg_ram >> 16;
-	if (cfg->id == ID_CAN0_INT0 || cfg->id == ID_CAN0_INT1)
-		regVal32 = (SFR->SFR_CAN & ~SFR_CAN_EXT_MEM_CAN0_ADDR_Msk)
-		    | SFR_CAN_EXT_MEM_CAN0_ADDR(regVal32);
-	else
-		regVal32 = (SFR->SFR_CAN & ~SFR_CAN_EXT_MEM_CAN1_ADDR_Msk)
-		    | SFR_CAN_EXT_MEM_CAN1_ADDR(regVal32);
-	SFR->SFR_CAN = regVal32;
+	/* SAMC21 does not set the MSB of the Message RAM Base Address */
 
 	/* Reset the CC Control Register */
-	mcan->MCAN_CCCR = 0 | MCAN_CCCR_INIT_ENABLED;
+	mcan->CCCR.reg = 0 | CAN_CCCR_INIT;
 
 	mcan_disable(set);
 	mcan_reconfigure(set);
 
 	/* Global Filter Configuration: Reject remote frames, reject non-matching frames */
-	mcan->MCAN_GFC = MCAN_GFC_RRFE_REJECT | MCAN_GFC_RRFS_REJECT
-	    | MCAN_GFC_ANFE(2) | MCAN_GFC_ANFS(2);
+	mcan->GFC.reg = CAN_GFC_RRFE | CAN_GFC_RRFS
+	    | CAN_GFC_ANFE(2) | CAN_GFC_ANFS(2);
 
 	/* Extended ID Filter AND mask */
-	mcan->MCAN_XIDAM = 0x1FFFFFFF;
+	mcan->XIDAM.reg = 0x1FFFFFFF;
 
 	/* Interrupt configuration - leave initialization with all interrupts off
 	 * Disable all interrupts */
-	mcan->MCAN_IE = 0;
-	mcan->MCAN_TXBTIE = 0x00000000;
+	mcan->IE.reg = 0;
+	mcan->TXBTIE.reg = 0x00000000;
 	/* All interrupts directed to Line 0 */
-	mcan->MCAN_ILS = 0x00000000;
+	mcan->ILS.reg = 0x00000000;
 	/* Disable both interrupt LINE 0 & LINE 1 */
-	mcan->MCAN_ILE = 0x00;
+	mcan->ILE.reg = 0x00;
 	/* Clear all interrupt flags */
-	mcan->MCAN_IR = 0xFFCFFFFF;
+	mcan->IR.reg = 0xFFCFFFFF;
 
 	/* Configure CAN bit timing */
 	if (cfg->bit_rate == 0
@@ -246,10 +245,10 @@ bool mcan_initialize(struct mcan_set *set, const struct mcan_config *cfg)
 	if (regVal32 < 1 || regVal32 > 512)
 		return false;
 	/* Apply bit timing configuration */
-	mcan->MCAN_NBTP = MCAN_NBTP_NBRP(regVal32 - 1)
-	    | MCAN_NBTP_NTSEG1(cfg->quanta_before_sp - 1 - 1)
-	    | MCAN_NBTP_NTSEG2(cfg->quanta_after_sp - 1)
-	    | MCAN_NBTP_NSJW(cfg->quanta_sync_jump - 1);
+	mcan->NBTP.reg = CAN_NBTP_NBRP(regVal32 - 1)
+	    | CAN_NBTP_NTSEG1(cfg->quanta_before_sp - 1 - 1)
+	    | CAN_NBTP_NTSEG2(cfg->quanta_after_sp - 1)
+	    | CAN_NBTP_NSJW(cfg->quanta_sync_jump - 1);
 
 	/* Configure fast CAN FD bit timing */
 	if (cfg->bit_rate_fd < cfg->bit_rate
@@ -263,64 +262,64 @@ bool mcan_initialize(struct mcan_set *set, const struct mcan_config *cfg)
 	if (regVal32 < 1 || regVal32 > 32)
 		return false;
 	/* Apply bit timing configuration */
-	mcan->MCAN_DBTP = MCAN_DBTP_FBRP(regVal32 - 1)
-	    | MCAN_DBTP_DTSEG1(cfg->quanta_before_sp_fd - 1 - 1)
-	    | MCAN_DBTP_DTSEG2(cfg->quanta_after_sp_fd - 1)
-	    | MCAN_DBTP_DSJW(cfg->quanta_sync_jump_fd - 1);
+	mcan->DBTP.reg = CAN_DBTP_DBRP(regVal32 - 1)
+	    | CAN_DBTP_DTSEG1(cfg->quanta_before_sp_fd - 1 - 1)
+	    | CAN_DBTP_DTSEG2(cfg->quanta_after_sp_fd - 1)
+	    | CAN_DBTP_DSJW(cfg->quanta_sync_jump_fd - 1);
 
 	/* Configure Message RAM starting addresses and element count */
 	/* 11-bit Message ID Rx Filters */
-	mcan->MCAN_SIDFC =
-	    MCAN_SIDFC_FLSSA((uint32_t)set->ram_filt_std >> 2)
-	    | MCAN_SIDFC_LSS(cfg->array_size_filt_std);
+	mcan->SIDFC.reg =
+	    CAN_SIDFC_FLSSA((uint32_t)set->ram_filt_std)
+	    | CAN_SIDFC_LSS(cfg->array_size_filt_std);
 	/* 29-bit Message ID Rx Filters */
-	mcan->MCAN_XIDFC =
-	    MCAN_XIDFC_FLESA((uint32_t)set->ram_filt_ext >> 2)
-	    | MCAN_XIDFC_LSE(cfg->array_size_filt_ext);
+	mcan->XIDFC.reg =
+	    CAN_XIDFC_FLESA((uint32_t)set->ram_filt_ext)
+	    | CAN_XIDFC_LSE(cfg->array_size_filt_ext);
 	/* Rx FIFO 0 */
-	mcan->MCAN_RXF0C =
-	    MCAN_RXF0C_F0SA((uint32_t)set->ram_fifo_rx0 >> 2)
-	    | MCAN_RXF0C_F0S(cfg->fifo_size_rx0)
-	    | MCAN_RXF0C_F0WM(0)
+	mcan->RXF0C.reg =
+	    CAN_RXF0C_F0SA((uint32_t)set->ram_fifo_rx0)
+	    | CAN_RXF0C_F0S(cfg->fifo_size_rx0)
+	    | CAN_RXF0C_F0WM(0)
 	    | 0;   /* clear MCAN_RXF0C_F0OM */
 	/* Rx FIFO 1 */
-	mcan->MCAN_RXF1C =
-	    MCAN_RXF1C_F1SA((uint32_t)set->ram_fifo_rx1 >> 2)
-	    | MCAN_RXF1C_F1S(cfg->fifo_size_rx1)
-	    | MCAN_RXF1C_F1WM(0)
+	mcan->RXF1C.reg =
+	    CAN_RXF1C_F1SA((uint32_t)set->ram_fifo_rx1)
+	    | CAN_RXF1C_F1S(cfg->fifo_size_rx1)
+	    | CAN_RXF1C_F1WM(0)
 	    | 0;   /* clear MCAN_RXF1C_F1OM */
 	/* Dedicated Rx Buffers
 	 * Note: the HW does not know (and does not care about) how many
 	 * dedicated Rx Buffers are used by the application. */
-	mcan->MCAN_RXBC =
-	    MCAN_RXBC_RBSA((uint32_t)set->ram_array_rx >> 2);
+	mcan->RXBC.reg =
+	    CAN_RXBC_RBSA((uint32_t)set->ram_array_rx);
 	/* Tx Event FIFO */
-	mcan->MCAN_TXEFC =
-	    MCAN_TXEFC_EFSA((uint32_t)set->ram_fifo_tx_evt >> 2)
-	    | MCAN_TXEFC_EFS(cfg->fifo_size_tx_evt)
-	    | MCAN_TXEFC_EFWM(0);
+	mcan->TXEFC.reg =
+	    CAN_TXEFC_EFSA((uint32_t)set->ram_fifo_tx_evt)
+	    | CAN_TXEFC_EFS(cfg->fifo_size_tx_evt)
+	    | CAN_TXEFC_EFWM(0);
 	/* Tx Buffers */
-	mcan->MCAN_TXBC =
-	    MCAN_TXBC_TBSA((uint32_t)set->ram_array_tx >> 2)
-	    | MCAN_TXBC_NDTB(cfg->array_size_tx)
-	    | MCAN_TXBC_TFQS(cfg->fifo_size_tx)
+	mcan->TXBC.reg =
+	    CAN_TXBC_TBSA((uint32_t)set->ram_array_tx)
+	    | CAN_TXBC_NDTB(cfg->array_size_tx)
+	    | CAN_TXBC_TFQS(cfg->fifo_size_tx)
 	    | 0;   /* clear MCAN_TXBC_TFQM */
 
 	/* Configure the size of data fields in Rx and Tx Buffer Elements */
 	if (!get_length_code(cfg->buf_size_rx_fifo0, &dlc))
 		return false;
-	regVal32 = MCAN_RXESC_F0DS(dlc < CAN_DLC_8 ? 0 : dlc - CAN_DLC_8);
+	regVal32 = CAN_RXESC_F0DS(dlc < CAN_DLC_8 ? 0 : dlc - CAN_DLC_8);
 	if (!get_length_code(cfg->buf_size_rx_fifo1, &dlc))
 		return false;
-	regVal32 |= MCAN_RXESC_F1DS(dlc < CAN_DLC_8 ? 0 : dlc - CAN_DLC_8);
+	regVal32 |= CAN_RXESC_F1DS(dlc < CAN_DLC_8 ? 0 : dlc - CAN_DLC_8);
 	if (!get_length_code(cfg->buf_size_rx, &dlc))
 		return false;
-	regVal32 |= MCAN_RXESC_RBDS(dlc < CAN_DLC_8 ? 0 : dlc - CAN_DLC_8);
-	mcan->MCAN_RXESC = regVal32;
+	regVal32 |= CAN_RXESC_RBDS(dlc < CAN_DLC_8 ? 0 : dlc - CAN_DLC_8);
+	mcan->RXESC.reg = regVal32;
 	if (!get_length_code(cfg->buf_size_tx, &dlc))
 		return false;
-	mcan->MCAN_TXESC =
-	    MCAN_TXESC_TBDS(dlc < CAN_DLC_8 ? 0 : dlc - CAN_DLC_8);
+	mcan->TXESC.reg =
+	    CAN_TXESC_TBDS(dlc < CAN_DLC_8 ? 0 : dlc - CAN_DLC_8);
 
 	/* Configure Message ID Filters
 	 * ...Disable all standard filters */
@@ -336,75 +335,74 @@ bool mcan_initialize(struct mcan_set *set, const struct mcan_config *cfg)
 	    element += MCAN_RAM_FILT_EXT_SIZE)
 		element[0] = MCAN_RAM_FILT_EFEC_DIS;
 
-	mcan->MCAN_NDAT1 = 0xFFFFFFFF;   /* clear new (rx) data flags */
-	mcan->MCAN_NDAT2 = 0xFFFFFFFF;   /* clear new (rx) data flags */
+	mcan->NDAT1.reg = 0xFFFFFFFF;   /* clear new (rx) data flags */
+	mcan->NDAT2.reg = 0xFFFFFFFF;   /* clear new (rx) data flags */
 
-	regVal32 = mcan->MCAN_CCCR & ~(MCAN_CCCR_BRSE | MCAN_CCCR_FDOE);
-	mcan->MCAN_CCCR = regVal32 | MCAN_CCCR_PXHD | MCAN_CCCR_BRSE_DISABLED
-	    | MCAN_CCCR_FDOE_DISABLED;
+	regVal32 = mcan->CCCR.reg & ~(CAN_CCCR_BRSE | CAN_CCCR_FDOE);
+	mcan->CCCR.reg = regVal32 | CAN_CCCR_PXHD;
 
 	return true;
 }
 
 void mcan_reconfigure(struct mcan_set *set)
 {
-	Mcan *mcan = set->cfg.regs;
+	Can *mcan = set->cfg.regs;
 	uint32_t regVal32;
 
-	regVal32 = mcan->MCAN_CCCR & ~MCAN_CCCR_CCE;
-	assert((regVal32 & MCAN_CCCR_INIT) == MCAN_CCCR_INIT_ENABLED);
+	regVal32 = mcan->CCCR.reg & ~CAN_CCCR_CCE;
+	assert((regVal32 & CAN_CCCR_INIT) == CAN_CCCR_INIT);
 	/* Enable writing to configuration registers */
-	mcan->MCAN_CCCR = regVal32 | MCAN_CCCR_CCE_CONFIGURABLE;
+	mcan->CCCR.reg = regVal32 | CAN_CCCR_CCE;
 }
 
 void mcan_set_mode(struct mcan_set *set, enum mcan_can_mode mode)
 {
-	Mcan *mcan = set->cfg.regs;
+	Can *mcan = set->cfg.regs;
 	uint32_t regVal32;
 
-	regVal32 = mcan->MCAN_CCCR & ~(MCAN_CCCR_BRSE | MCAN_CCCR_FDOE);
+	regVal32 = mcan->CCCR.reg & ~(CAN_CCCR_BRSE | CAN_CCCR_FDOE);
 	switch (mode) {
 	case MCAN_MODE_CAN:
-		regVal32 |= MCAN_CCCR_BRSE_DISABLED | MCAN_CCCR_FDOE_DISABLED;
+		regVal32 |= 0;
 		break;
 	case MCAN_MODE_EXT_LEN_CONST_RATE:
-		regVal32 |= MCAN_CCCR_BRSE_DISABLED | MCAN_CCCR_FDOE_ENABLED;
+		regVal32 |= CAN_CCCR_FDOE;
 		break;
 	case MCAN_MODE_EXT_LEN_DUAL_RATE:
-		regVal32 |= MCAN_CCCR_BRSE_ENABLED | MCAN_CCCR_FDOE_ENABLED;
+		regVal32 |= CAN_CCCR_BRSE | CAN_CCCR_FDOE;
 		break;
 	default:
 		return;
 	}
-	mcan->MCAN_CCCR = regVal32;
+	mcan->CCCR.reg = regVal32;
 }
 
 enum mcan_can_mode mcan_get_mode(const struct mcan_set *set)
 {
-	const uint32_t cccr = set->cfg.regs->MCAN_CCCR;
+	const uint32_t cccr = set->cfg.regs->CCCR.reg;
 
-	if ((cccr & MCAN_CCCR_FDOE) == MCAN_CCCR_FDOE_DISABLED)
+	if (!(cccr & CAN_CCCR_FDOE))
 		return MCAN_MODE_CAN;
-	if ((cccr & MCAN_CCCR_BRSE) == MCAN_CCCR_BRSE_DISABLED)
+	if (!(cccr & CAN_CCCR_BRSE))
 		return MCAN_MODE_EXT_LEN_CONST_RATE;
 	return MCAN_MODE_EXT_LEN_DUAL_RATE;
 }
 
 void mcan_init_loopback(struct mcan_set *set)
 {
-	Mcan *mcan = set->cfg.regs;
+	Can *mcan = set->cfg.regs;
 
-	mcan->MCAN_CCCR |= MCAN_CCCR_TEST_ENABLED;
+	mcan->CCCR.reg |= CAN_CCCR_TEST;
 #if 0
-	mcan->MCAN_CCCR |= MCAN_CCCR_MON_ENABLED;   /* for internal loop back */
+	mcan->CCCR.reg |= CAN_CCCR_MON;   /* for internal loop back */
 #endif
-	mcan->MCAN_TEST |= MCAN_TEST_LBCK_ENABLED;
+	mcan->TEST.reg |= CAN_TEST_LBCK;
 }
 
 void mcan_set_tx_queue_mode(struct mcan_set *set)
 {
-	Mcan *mcan = set->cfg.regs;
-	mcan->MCAN_TXBC |= MCAN_TXBC_TFQM;
+	Can *mcan = set->cfg.regs;
+	mcan->TXBC.reg |= CAN_TXBC_TFQM;
 }
 
 void mcan_enable(struct mcan_set *set)
@@ -415,12 +413,11 @@ void mcan_enable(struct mcan_set *set)
 	 * Initialization state, by itself. Therefore, upon timeout, return.
 	 * [Using an arbitrary timeout criterion.] */
 	for (index = 0; index < 1024; index++) {
-		val = set->cfg.regs->MCAN_CCCR;
-		if ((val & MCAN_CCCR_INIT) == MCAN_CCCR_INIT_DISABLED)
+		val = set->cfg.regs->CCCR.reg;
+		if (!(val & CAN_CCCR_INIT))
 			break;
 		if (index == 0)
-			set->cfg.regs->MCAN_CCCR = (val & ~MCAN_CCCR_INIT)
-			    | MCAN_CCCR_INIT_DISABLED;
+			set->cfg.regs->CCCR.reg = (val & ~CAN_CCCR_INIT);
 	}
 }
 
@@ -430,41 +427,41 @@ void mcan_disable(struct mcan_set *set)
 	bool initial;
 
 	for (initial = true; true; initial = false) {
-		val = set->cfg.regs->MCAN_CCCR;
-		if ((val & MCAN_CCCR_INIT) == MCAN_CCCR_INIT_ENABLED)
+		val = set->cfg.regs->CCCR.reg;
+		if ((val & CAN_CCCR_INIT) == CAN_CCCR_INIT)
 			break;
 		if (initial)
-			set->cfg.regs->MCAN_CCCR = (val & ~MCAN_CCCR_INIT)
-			    | MCAN_CCCR_INIT_ENABLED;
+			set->cfg.regs->CCCR.reg = (val & ~CAN_CCCR_INIT)
+			    | CAN_CCCR_INIT;
 	}
 }
 
 void mcan_loopback_on(struct mcan_set *set)
 {
-	Mcan *mcan = set->cfg.regs;
-	mcan->MCAN_TEST |= MCAN_TEST_LBCK_ENABLED;
+	Can *mcan = set->cfg.regs;
+	mcan->TEST.reg |= CAN_TEST_LBCK;
 }
 
 void mcan_loopback_off(struct mcan_set *set)
 {
-	Mcan *mcan = set->cfg.regs;
-	mcan->MCAN_TEST &= ~MCAN_TEST_LBCK_ENABLED;
+	Can *mcan = set->cfg.regs;
+	mcan->TEST.reg &= ~CAN_TEST_LBCK;
 }
 
 void mcan_enable_rx_array_flag(struct mcan_set *set, uint8_t line)
 {
 	assert(line == 0 || line == 1);
 
-	Mcan *mcan = set->cfg.regs;
+	Can *mcan = set->cfg.regs;
 	if (line) {
-		mcan->MCAN_ILS |= MCAN_ILS_DRXL;
-		mcan->MCAN_ILE |= MCAN_ILE_EINT1;
+		mcan->ILS.reg |= CAN_ILS_DRXL;
+		mcan->ILE.reg |= CAN_ILE_EINT1;
 	} else {
-		mcan->MCAN_ILS &= ~MCAN_ILS_DRXL;
-		mcan->MCAN_ILE |= MCAN_ILE_EINT0;
+		mcan->ILS.reg &= ~CAN_ILS_DRXL;
+		mcan->ILE.reg |= CAN_ILE_EINT0;
 	}
-	mcan->MCAN_IR = MCAN_IR_DRX;   /* clear previous flag */
-	mcan->MCAN_IE |= MCAN_IE_DRXE;   /* enable it */
+	mcan->IR.reg = CAN_IR_DRX;   /* clear previous flag */
+	mcan->IE.reg |= CAN_IE_DRXE;   /* enable it */
 }
 
 uint8_t * mcan_prepare_tx_buffer(struct mcan_set *set, uint8_t buf_idx,
@@ -473,7 +470,7 @@ uint8_t * mcan_prepare_tx_buffer(struct mcan_set *set, uint8_t buf_idx,
 	assert(buf_idx < set->cfg.array_size_tx);
 	assert(len <= set->cfg.buf_size_tx);
 
-	Mcan *mcan = set->cfg.regs;
+	Can *mcan = set->cfg.regs;
 	uint32_t *pThisTxBuf = 0;
 	uint32_t val;
 	const enum mcan_can_mode mode = mcan_get_mode(set);
@@ -497,16 +494,16 @@ uint8_t * mcan_prepare_tx_buffer(struct mcan_set *set, uint8_t buf_idx,
 	*pThisTxBuf++ = val;
 	/* enable transmit from buffer to set TC interrupt bit in IR,
 	 * but interrupt will not happen unless TC interrupt is enabled */
-	mcan->MCAN_TXBTIE = (1 << buf_idx);
+	mcan->TXBTIE.reg = (1 << buf_idx);
 	return (uint8_t *)pThisTxBuf;   /* now it points to the data field */
 }
 
 void mcan_send_tx_buffer(struct mcan_set *set, uint8_t buf_idx)
 {
-	Mcan *mcan = set->cfg.regs;
+	Can *mcan = set->cfg.regs;
 
 	if (buf_idx < set->cfg.array_size_tx)
-		mcan->MCAN_TXBAR = (1 << buf_idx);
+		mcan->TXBAR.reg = (1 << buf_idx);
 }
 
 uint8_t mcan_enqueue_outgoing_msg(struct mcan_set *set, uint32_t id,
@@ -514,7 +511,7 @@ uint8_t mcan_enqueue_outgoing_msg(struct mcan_set *set, uint32_t id,
 {
 	assert(len <= set->cfg.buf_size_tx);
 
-	Mcan *mcan = set->cfg.regs;
+	Can *mcan = set->cfg.regs;
 	uint32_t val;
 	uint32_t *pThisTxBuf = 0;
 	const enum mcan_can_mode mode = mcan_get_mode(set);
@@ -524,10 +521,10 @@ uint8_t mcan_enqueue_outgoing_msg(struct mcan_set *set, uint32_t id,
 	if (!get_length_code(len, &dlc))
 		dlc = CAN_DLC_0;
 	/* Configured for FifoQ and FifoQ not full? */
-	if (set->cfg.fifo_size_tx == 0 || (mcan->MCAN_TXFQS & MCAN_TXFQS_TFQF))
+	if (set->cfg.fifo_size_tx == 0 || (mcan->TXFQS.reg & CAN_TXFQS_TFQF))
 		return putIdx;
-	putIdx = (uint8_t)((mcan->MCAN_TXFQS & MCAN_TXFQS_TFQPI_Msk)
-	    >> MCAN_TXFQS_TFQPI_Pos);
+	putIdx = (uint8_t)((mcan->TXFQS.reg & CAN_TXFQS_TFQPI_Msk)
+	    >> CAN_TXFQS_TFQPI_Pos);
 	pThisTxBuf = set->ram_array_tx + (uint32_t)
 	    putIdx * (MCAN_RAM_BUF_HDR_SIZE + set->cfg.buf_size_tx / 4);
 	if (mcan_is_extended_id(id))
@@ -544,16 +541,16 @@ uint8_t mcan_enqueue_outgoing_msg(struct mcan_set *set, uint32_t id,
 	/* enable transmit from buffer to set TC interrupt bit in IR,
 	 * but interrupt will not happen unless TC interrupt is enabled
 	 */
-	mcan->MCAN_TXBTIE = (1 << putIdx);
+	mcan->TXBTIE.reg = (1 << putIdx);
 	/* request to send */
-	mcan->MCAN_TXBAR = (1 << putIdx);
+	mcan->TXBAR.reg = (1 << putIdx);
 	return putIdx;
 }
 
 bool mcan_is_buffer_sent(const struct mcan_set *set, uint8_t buf_idx)
 {
-	Mcan *mcan = set->cfg.regs;
-	return mcan->MCAN_TXBTO & (1 << buf_idx) ? true : false;
+	Can *mcan = set->cfg.regs;
+	return mcan->TXBTO.reg & (1 << buf_idx) ? true : false;
 }
 
 void mcan_filter_single_id(struct mcan_set *set,
@@ -619,12 +616,12 @@ void mcan_filter_id_mask(struct mcan_set *set, uint8_t fifo, uint8_t filter,
 
 bool mcan_rx_buffer_data(const struct mcan_set *set, uint8_t buf_idx)
 {
-	Mcan *mcan = set->cfg.regs;
+	Can *mcan = set->cfg.regs;
 
 	if (buf_idx < 32)
-		return mcan->MCAN_NDAT1 & (1 << buf_idx) ? true : false;
+		return mcan->NDAT1.reg & (1 << buf_idx) ? true : false;
 	else if (buf_idx < 64)
-		return mcan->MCAN_NDAT2 & (1 << (buf_idx - 32)) ? true : false;
+		return mcan->NDAT2.reg & (1 << (buf_idx - 32)) ? true : false;
 	else
 		return false;
 }
@@ -634,7 +631,7 @@ void mcan_read_rx_buffer(struct mcan_set *set, uint8_t buf_idx,
 {
 	assert(buf_idx < set->cfg.array_size_rx);
 
-	Mcan *mcan = set->cfg.regs;
+	Can *mcan = set->cfg.regs;
 	const uint32_t *pThisRxBuf = 0;
 	uint32_t tempRy;   /* temp copy of RX buffer word */
 	uint8_t len;
@@ -674,9 +671,9 @@ void mcan_read_rx_buffer(struct mcan_set *set, uint8_t buf_idx,
 		msg->data_len = 0;
 	/* clear the new data flag for the buffer */
 	if (buf_idx < 32)
-		mcan->MCAN_NDAT1 = (1 << buf_idx);
+		mcan->NDAT1.reg = (1 << buf_idx);
 	else
-		mcan->MCAN_NDAT2 = (1 << (buf_idx - 32));
+		mcan->NDAT2.reg = (1 << (buf_idx - 32));
 }
 
 uint8_t mcan_dequeue_received_msg(struct mcan_set *set, uint8_t fifo,
@@ -684,7 +681,7 @@ uint8_t mcan_dequeue_received_msg(struct mcan_set *set, uint8_t fifo,
 {
 	assert(fifo == 0 || fifo == 1);
 
-	Mcan *mcan = set->cfg.regs;
+	Can *mcan = set->cfg.regs;
 	uint32_t *pThisRxBuf = 0;
 	uint32_t tempRy;   /* temp copy of RX buffer word */
 	uint8_t buf_elem_data_size, len;
@@ -693,21 +690,21 @@ uint8_t mcan_dequeue_received_msg(struct mcan_set *set, uint8_t fifo,
 	uint8_t fill_level = 0;   /* default: fifo empty */
 
 	if (fifo) {
-		get_index = (mcan->MCAN_RXF1S & MCAN_RXF1S_F1GI_Msk) >>
-		    MCAN_RXF1S_F1GI_Pos;
-		fill_level = (uint8_t)((mcan->MCAN_RXF1S & MCAN_RXF1S_F1FL_Msk)
-		    >> MCAN_RXF1S_F1FL_Pos);
+		get_index = (mcan->RXF1S.reg & CAN_RXF1S_F1GI_Msk) >>
+		    CAN_RXF1S_F1GI_Pos;
+		fill_level = (uint8_t)((mcan->RXF1S.reg & CAN_RXF1S_F1FL_Msk)
+		    >> CAN_RXF1S_F1FL_Pos);
 		pThisRxBuf = set->ram_fifo_rx1;
 		buf_elem_data_size = set->cfg.buf_size_rx_fifo1;
-		fifo_ack_reg = (uint32_t *) & mcan->MCAN_RXF1A;
+		fifo_ack_reg = (uint32_t *) & mcan->RXF1A;
 	} else {
-		get_index = (mcan->MCAN_RXF0S & MCAN_RXF0S_F0GI_Msk)
-		    >> MCAN_RXF0S_F0GI_Pos;
-		fill_level = (uint8_t)((mcan->MCAN_RXF0S & MCAN_RXF0S_F0FL_Msk)
-		    >> MCAN_RXF0S_F0FL_Pos);
+		get_index = (mcan->RXF0S.reg & CAN_RXF0S_F0GI_Msk)
+		    >> CAN_RXF0S_F0GI_Pos;
+		fill_level = (uint8_t)((mcan->RXF0S.reg & CAN_RXF0S_F0FL_Msk)
+		    >> CAN_RXF0S_F0FL_Pos);
 		pThisRxBuf = set->ram_fifo_rx0;
 		buf_elem_data_size = set->cfg.buf_size_rx_fifo0;
-		fifo_ack_reg = (uint32_t *) & mcan->MCAN_RXF0A;
+		fifo_ack_reg = (uint32_t *) & mcan->RXF0A.reg;
 	}
 
 	if (fill_level == 0)

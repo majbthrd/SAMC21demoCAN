@@ -1,0 +1,4 @@
+*.bak
+SAMC21demoCAN THUMB Debug\*
+SAMC21demoCAN THUMB Release\*
+*.hzs

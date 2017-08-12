@@ -1,3 +1,7 @@
+/*
+This code was originally written for the SAMA5D2, but has been modified to work with the SAMC21.
+*/
+
 /* ----------------------------------------------------------------------------
  *         SAM Software Package License
  * ----------------------------------------------------------------------------
@@ -39,8 +43,7 @@
  * \section Requirements
  *
  * This package is compatible with the evaluation boards listed below:
- * - SAMA5D2-VB
- * - SAMA5D2-XULT
+ * - SAMC21-XPRO
  *
  * \section Description
  *
@@ -100,15 +103,11 @@
 
 #include <stdint.h>
 
-#include "board.h"
 #include "chip.h"
 #include "compiler.h"
-#include "peripherals/mcan.h"
-#include "peripherals/pmc.h"
-#include "peripherals/pio.h"
-#include "peripherals/aic.h"
+#include "mcan.h"
 
-#include "misc/console.h"
+#include "console.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -163,18 +162,8 @@ struct frame_desc
  *        Local variables
  *----------------------------------------------------------------------------*/
 
-/* Allocate the Message RAM from non-cached memory.
- * The Buffer Elements in the Message RAM are contiguous and not aligned on
- * cache lines. If caching was turned on, it would be necessary to explicitly
- * clean the data cache lines matching transmit buffers, and then invalidate the
- * data cache lines matching receive buffers. Since these sections overlap in
- * the cache, strong constraints would apply as soon as several transmit and
- * receive buffers were used concurrently.
- * An alternative solution: if spare Buffers Elements are available, they may be
- * used to separate otherwise conflicting, active Buffer Elements, and then
- * benefit from memory caching.
+/* the Message RAM is allocated from within the SAMC21's RAM
  */
-SECTION(".region_ddr_nocache")
 static uint32_t mcan_msg_ram[MSG_RAM_SIZE] __attribute__ ((aligned (4)));
 
 struct frame_desc samples[3] = {
@@ -238,7 +227,15 @@ static void print_buffer(uint32_t len, const uint8_t *data)
 /**
  * \brief Handler for interrupt line 1 of MCANx.
  */
-static void handle_mcan_irq1(void)
+void CAN0_Handler(void)
+{
+	if (mcan_rx_array_data(&mcan)) {
+		mcan_clear_rx_array_flag(&mcan);
+		rx_ded_buffer_data = true;
+	}
+}
+
+void CAN1_Handler(void)
 {
 	if (mcan_rx_array_data(&mcan)) {
 		mcan_clear_rx_array_flag(&mcan);
@@ -290,6 +287,7 @@ static void watch_mcan(void)
 	struct mcan_msg_info msg = { .data = msg_data };
 	struct frame_desc *sample = NULL;
 	uint8_t fifo_entries;
+	bool need_to_service_rx;
 
 	/* Expect TX'd message complete */
 	if (mcan_is_tx_complete(&mcan)) {
@@ -304,9 +302,13 @@ static void watch_mcan(void)
 		}
 	}
 
-	if (rx_ded_buffer_data) {
-		/* FIXME race condition here */
+	/* check if ISR has fired */
+	__disable_irq();
+	if (need_to_service_rx = rx_ded_buffer_data)
 		rx_ded_buffer_data = false;
+	__enable_irq();
+
+	if (need_to_service_rx) {
 		if (mcan_rx_buffer_data(&mcan, RX_BUFFER_0)) {
 			msg.data_len = sizeof(msg_data);
 			mcan_read_rx_buffer(&mcan, RX_BUFFER_0, &msg);
@@ -356,7 +358,7 @@ static void display_menu(void)
 	chk_box[2] = (can_mode == MCAN_MODE_EXT_LEN_DUAL_RATE) ? 'X' : ' ';
 	printf("   c: [%c] ISO 11898-1 CAN\n\r", chk_box[0]);
 	printf("   f: [%c] ISO 11898-7 CAN FD, 64-byte data\n\r", chk_box[1]);
-	printf("   s: [%c] ISO 11898-7 CAN FD, 64-byte data, 2 Mbps data bit"
+	printf("   s: [%c] ISO 11898-7 CAN FD, 64-byte data, 1 Mbps data bit"
 	    " rate\n\r", chk_box[2]);
 	printf("Press [l] to toggle the integrated MCAN loop-back on/off\n\r");
 	chk_box[0] = loop_back ? 'X' : ' ';
@@ -377,10 +379,14 @@ static void display_menu(void)
  */
 int main(void)
 {
-	const struct _pin can_pins[] = CAN0_PINS;
 	const struct mcan_config mcan_cfg = {
-		.id = ID_CAN0_INT0,
-		.regs = MCAN0,
+#if 1
+		.id = ID_CAN0,
+		.regs = CAN0,
+#else
+		.id = ID_CAN1,
+		.regs = CAN1,
+#endif
 		.msg_ram = mcan_msg_ram,
 
 		.array_size_filt_std = RAM_ARRAY_SIZE_FILT_STD,
@@ -397,16 +403,22 @@ int main(void)
 		.buf_size_rx = 64,
 		.buf_size_tx = 64,
 
+		/*
+		using values from AT6493 (SAMC21 app note); the plus values are to add on what the MCAN driver subtracts back off
+		*/
 		.bit_rate = 500000,
-		.quanta_before_sp = 1 + 2 + 12,
-		.quanta_after_sp = 12,
+		.quanta_before_sp = 10 + 2,
+		.quanta_after_sp = 3 + 1,
+		.quanta_sync_jump = 3 + 1,
 
-		.bit_rate_fd = 2000000,
-		.quanta_before_sp_fd = 1 + 2 + 5,
-		.quanta_after_sp_fd = 5,
-
-		.quanta_sync_jump = 4,
-		.quanta_sync_jump_fd = 2,
+		/*
+		AT6493 (SAMC21 app note) 'fast' values were unhelpfully the same as normal speed; these are for double (1MBit)
+                the maximum peripheral clock of 48MHz on the SAMC21 does restrict us from very high rates
+		*/
+		.bit_rate_fd = 1000000,
+		.quanta_before_sp_fd = 10 + 2,
+		.quanta_after_sp_fd = 3 + 1,
+		.quanta_sync_jump_fd = 3 + 1,
 	};
 	uint32_t int_source, mcan_msg_ram_size = ARRAY_SIZE(mcan_msg_ram);
 	uint8_t user_key;
@@ -414,20 +426,37 @@ int main(void)
 	/* Output example information */
 	console_example_info("CAN Example");
 
-	/* The MCAN peripheral is clocked by both its Peripheral Clock
-	 * and Generated Clock 3 (at least on SAMA5D2x). */
-	/* Configure GCLK3 = <Master clock> divided by 1
-	 * FIXME follow datasheet recommendation: configure GCLK3 = <UPLL clock>
-	 * divided by 24, 12 or 6 */
-	pmc_configure_gck(mcan_cfg.id, PMC_PCR_GCKCSS_MCK_CLK, 1 - 1);
-	pmc_enable_gck(mcan_cfg.id);
-	pmc_enable_peripheral(mcan_cfg.id);
-	/* Configure peripheral PIO's (CANTX and CANRX) */
-	pio_configure(can_pins, ARRAY_SIZE(can_pins));
-	/* Enable peripheral interrupt */
-	int_source = mcan_cfg.id == ID_CAN0_INT0 ? ID_CAN0_INT1 : ID_CAN1_INT1;
-	aic_set_source_vector(int_source, handle_mcan_irq1);
-	aic_enable(int_source);
+	/*
+	instead of using Atmel's convoluted and bloated Atmel Software Framework to configure pins, we just efficiently write the needed registers
+	*/
+	switch (mcan_cfg.id)
+	{
+	case ID_CAN0:
+		PORT->Group[0].DIRSET.reg = PORT_PA24;
+		PORT->Group[0].DIRCLR.reg = PORT_PA25;
+		PORT->Group[0].PINCFG[24].reg = PORT_PINCFG_INEN | PORT_PINCFG_PMUXEN;
+		PORT->Group[0].PINCFG[25].reg = PORT_PINCFG_INEN | PORT_PINCFG_PMUXEN;
+		PORT->Group[0].PMUX[24 / 2].reg = PORT_PMUX_PMUXE(6 /* CAN0 G */) | PORT_PMUX_PMUXO(6 /* CAN0 G */); /* have to write odd and even at once */
+
+		GCLK->PCHCTRL[CAN0_GCLK_ID].reg = GCLK_PCHCTRL_CHEN | GCLK_PCHCTRL_GEN_GCLK0;
+		MCLK->AHBMASK.reg |= MCLK_AHBMASK_CAN0;
+
+		NVIC_EnableIRQ(CAN0_IRQn);
+		break;
+	case ID_CAN1:
+		PORT->Group[1].DIRSET.reg = PORT_PB14;
+		PORT->Group[1].DIRCLR.reg = PORT_PB15;
+		PORT->Group[1].PINCFG[14].reg = PORT_PINCFG_INEN | PORT_PINCFG_PMUXEN;
+		PORT->Group[1].PINCFG[15].reg = PORT_PINCFG_INEN | PORT_PINCFG_PMUXEN;
+		PORT->Group[1].PMUX[14 / 2].reg = PORT_PMUX_PMUXE(6 /* CAN0 G */) | PORT_PMUX_PMUXO(6 /* CAN0 G */); /* have to write odd and even at once */
+
+		GCLK->PCHCTRL[CAN1_GCLK_ID].reg = GCLK_PCHCTRL_CHEN | GCLK_PCHCTRL_GEN_GCLK0;
+		MCLK->AHBMASK.reg |= MCLK_AHBMASK_CAN1;
+
+		NVIC_EnableIRQ(CAN1_IRQn);
+		break;
+	}
+	__enable_irq();
 
 	if (!mcan_configure_msg_ram(&mcan_cfg, &mcan_msg_ram_size))
 		goto Error;
