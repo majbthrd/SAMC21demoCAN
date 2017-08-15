@@ -17,6 +17,16 @@ This is my quick and dirty adaptation of said code to run on the SAMC21-XPRO eva
 
 [Rowley Crossworks for ARM](http://www.rowley.co.uk/arm/) is needed to compile this code.  The source code is written to compile with gcc/clang, but you must adapt the code yourself (adding all the startup code that tends to not be available as freely-distributable open-source) if you wish to adopt a different tool chain.
 
+*OR*
+
+Leveraging a modified version of the build environment provided by [Alex Taradov's mcu-starter-projects](https://github.com/ataradov/mcu-starter-projects), the code can be built using only open-source software.  In Ubuntu-derived distributions, this is likely achieved with as little as:
+
+```
+sudo apt-get install gcc-arm-none-eabi libnewlib-arm-none-eabi build-essential
+```
+
+## Target Hardware
+
 [SAM C21 Xplained Pro Evaluation Kit](http://www.atmel.com/tools/atsamc21-xpro.aspx)
 
 ## Usage

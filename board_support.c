@@ -23,7 +23,7 @@
     DEALINGS IN THE SOFTWARE.
 */
 
-#include <sam.h>
+#include <samc21.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -77,7 +77,10 @@ void SystemInit(void)
   board_init();
 }
 
-void console_example_info(const char *example_name) {}
+void console_example_info(const char *example_name)
+{
+  (void)example_name;
+}
 
 bool console_is_rx_ready(void)
 {

@@ -304,7 +304,7 @@ static void watch_mcan(void)
 
 	/* check if ISR has fired */
 	__disable_irq();
-	if (need_to_service_rx = rx_ded_buffer_data)
+	if ((need_to_service_rx = rx_ded_buffer_data))
 		rx_ded_buffer_data = false;
 	__enable_irq();
 
@@ -420,7 +420,7 @@ int main(void)
 		.quanta_after_sp_fd = 3 + 1,
 		.quanta_sync_jump_fd = 3 + 1,
 	};
-	uint32_t int_source, mcan_msg_ram_size = ARRAY_SIZE(mcan_msg_ram);
+	uint32_t mcan_msg_ram_size = ARRAY_SIZE(mcan_msg_ram);
 	uint8_t user_key;
 
 	/* Output example information */
